@@ -1,4 +1,4 @@
-module quick-stash
+module github.com/rajivgeraev/quick-stash
 
 go 1.18
 

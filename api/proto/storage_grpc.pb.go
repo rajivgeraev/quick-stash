@@ -19,16 +19,16 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	FileStorage_Upload_FullMethodName   = "/storage.FileStorage/Upload"
-	FileStorage_Download_FullMethodName = "/storage.FileStorage/Download"
+	FileStorage_StoreFile_FullMethodName    = "/storage.FileStorage/StoreFile"
+	FileStorage_RetrieveFile_FullMethodName = "/storage.FileStorage/RetrieveFile"
 )
 
 // FileStorageClient is the client API for FileStorage service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type FileStorageClient interface {
-	Upload(ctx context.Context, in *FileChunkStream, opts ...grpc.CallOption) (*UploadStatus, error)
-	Download(ctx context.Context, in *DownloadRequest, opts ...grpc.CallOption) (*FileChunkStream, error)
+	StoreFile(ctx context.Context, opts ...grpc.CallOption) (FileStorage_StoreFileClient, error)
+	RetrieveFile(ctx context.Context, in *FileRequest, opts ...grpc.CallOption) (FileStorage_RetrieveFileClient, error)
 }
 
 type fileStorageClient struct {
@@ -39,30 +39,78 @@ func NewFileStorageClient(cc grpc.ClientConnInterface) FileStorageClient {
 	return &fileStorageClient{cc}
 }
 
-func (c *fileStorageClient) Upload(ctx context.Context, in *FileChunkStream, opts ...grpc.CallOption) (*UploadStatus, error) {
-	out := new(UploadStatus)
-	err := c.cc.Invoke(ctx, FileStorage_Upload_FullMethodName, in, out, opts...)
+func (c *fileStorageClient) StoreFile(ctx context.Context, opts ...grpc.CallOption) (FileStorage_StoreFileClient, error) {
+	stream, err := c.cc.NewStream(ctx, &FileStorage_ServiceDesc.Streams[0], FileStorage_StoreFile_FullMethodName, opts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &fileStorageStoreFileClient{stream}
+	return x, nil
 }
 
-func (c *fileStorageClient) Download(ctx context.Context, in *DownloadRequest, opts ...grpc.CallOption) (*FileChunkStream, error) {
-	out := new(FileChunkStream)
-	err := c.cc.Invoke(ctx, FileStorage_Download_FullMethodName, in, out, opts...)
+type FileStorage_StoreFileClient interface {
+	Send(*FileChunk) error
+	CloseAndRecv() (*StoreFileResponse, error)
+	grpc.ClientStream
+}
+
+type fileStorageStoreFileClient struct {
+	grpc.ClientStream
+}
+
+func (x *fileStorageStoreFileClient) Send(m *FileChunk) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *fileStorageStoreFileClient) CloseAndRecv() (*StoreFileResponse, error) {
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	m := new(StoreFileResponse)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *fileStorageClient) RetrieveFile(ctx context.Context, in *FileRequest, opts ...grpc.CallOption) (FileStorage_RetrieveFileClient, error) {
+	stream, err := c.cc.NewStream(ctx, &FileStorage_ServiceDesc.Streams[1], FileStorage_RetrieveFile_FullMethodName, opts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &fileStorageRetrieveFileClient{stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+type FileStorage_RetrieveFileClient interface {
+	Recv() (*FileChunk, error)
+	grpc.ClientStream
+}
+
+type fileStorageRetrieveFileClient struct {
+	grpc.ClientStream
+}
+
+func (x *fileStorageRetrieveFileClient) Recv() (*FileChunk, error) {
+	m := new(FileChunk)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 // FileStorageServer is the server API for FileStorage service.
 // All implementations must embed UnimplementedFileStorageServer
 // for forward compatibility
 type FileStorageServer interface {
-	Upload(context.Context, *FileChunkStream) (*UploadStatus, error)
-	Download(context.Context, *DownloadRequest) (*FileChunkStream, error)
+	StoreFile(FileStorage_StoreFileServer) error
+	RetrieveFile(*FileRequest, FileStorage_RetrieveFileServer) error
 	mustEmbedUnimplementedFileStorageServer()
 }
 
@@ -70,11 +118,11 @@ type FileStorageServer interface {
 type UnimplementedFileStorageServer struct {
 }
 
-func (UnimplementedFileStorageServer) Upload(context.Context, *FileChunkStream) (*UploadStatus, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Upload not implemented")
+func (UnimplementedFileStorageServer) StoreFile(FileStorage_StoreFileServer) error {
+	return status.Errorf(codes.Unimplemented, "method StoreFile not implemented")
 }
-func (UnimplementedFileStorageServer) Download(context.Context, *DownloadRequest) (*FileChunkStream, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Download not implemented")
+func (UnimplementedFileStorageServer) RetrieveFile(*FileRequest, FileStorage_RetrieveFileServer) error {
+	return status.Errorf(codes.Unimplemented, "method RetrieveFile not implemented")
 }
 func (UnimplementedFileStorageServer) mustEmbedUnimplementedFileStorageServer() {}
 
@@ -89,40 +137,51 @@ func RegisterFileStorageServer(s grpc.ServiceRegistrar, srv FileStorageServer) {
 	s.RegisterService(&FileStorage_ServiceDesc, srv)
 }
 
-func _FileStorage_Upload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(FileChunkStream)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(FileStorageServer).Upload(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: FileStorage_Upload_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(FileStorageServer).Upload(ctx, req.(*FileChunkStream))
-	}
-	return interceptor(ctx, in, info, handler)
+func _FileStorage_StoreFile_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(FileStorageServer).StoreFile(&fileStorageStoreFileServer{stream})
 }
 
-func _FileStorage_Download_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DownloadRequest)
-	if err := dec(in); err != nil {
+type FileStorage_StoreFileServer interface {
+	SendAndClose(*StoreFileResponse) error
+	Recv() (*FileChunk, error)
+	grpc.ServerStream
+}
+
+type fileStorageStoreFileServer struct {
+	grpc.ServerStream
+}
+
+func (x *fileStorageStoreFileServer) SendAndClose(m *StoreFileResponse) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *fileStorageStoreFileServer) Recv() (*FileChunk, error) {
+	m := new(FileChunk)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
 		return nil, err
 	}
-	if interceptor == nil {
-		return srv.(FileStorageServer).Download(ctx, in)
+	return m, nil
+}
+
+func _FileStorage_RetrieveFile_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(FileRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
 	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: FileStorage_Download_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(FileStorageServer).Download(ctx, req.(*DownloadRequest))
-	}
-	return interceptor(ctx, in, info, handler)
+	return srv.(FileStorageServer).RetrieveFile(m, &fileStorageRetrieveFileServer{stream})
+}
+
+type FileStorage_RetrieveFileServer interface {
+	Send(*FileChunk) error
+	grpc.ServerStream
+}
+
+type fileStorageRetrieveFileServer struct {
+	grpc.ServerStream
+}
+
+func (x *fileStorageRetrieveFileServer) Send(m *FileChunk) error {
+	return x.ServerStream.SendMsg(m)
 }
 
 // FileStorage_ServiceDesc is the grpc.ServiceDesc for FileStorage service.
@@ -131,16 +190,18 @@ func _FileStorage_Download_Handler(srv interface{}, ctx context.Context, dec fun
 var FileStorage_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "storage.FileStorage",
 	HandlerType: (*FileStorageServer)(nil),
-	Methods: []grpc.MethodDesc{
+	Methods:     []grpc.MethodDesc{},
+	Streams: []grpc.StreamDesc{
 		{
-			MethodName: "Upload",
-			Handler:    _FileStorage_Upload_Handler,
+			StreamName:    "StoreFile",
+			Handler:       _FileStorage_StoreFile_Handler,
+			ClientStreams: true,
 		},
 		{
-			MethodName: "Download",
-			Handler:    _FileStorage_Download_Handler,
+			StreamName:    "RetrieveFile",
+			Handler:       _FileStorage_RetrieveFile_Handler,
+			ServerStreams: true,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
 	Metadata: "storage.proto",
 }

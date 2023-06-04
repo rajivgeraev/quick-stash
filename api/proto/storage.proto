@@ -5,25 +5,21 @@ option go_package = "github.com/rajivgeraev/quick-stash/api/proto";
 package storage;
 
 service FileStorage {
-  rpc Upload(FileChunkStream) returns (UploadStatus) {}
-  rpc Download(DownloadRequest) returns (FileChunkStream) {}
+  rpc StoreFile(stream FileChunk) returns (StoreFileResponse);
+  rpc RetrieveFile(FileRequest) returns (stream FileChunk);
 }
 
 message FileChunk {
-  string id = 1;
-  int32 part = 2;
-  bytes chunk = 3;
+  string fileID = 1;  // Идентификатор файла, для сопоставления частей файла
+  int32 partID = 2;   // Идентификатор части файла
+  bytes data = 3;     // Данные части файла
 }
 
-message FileChunkStream {
-  repeated FileChunk file_chunks = 1;
+message StoreFileResponse {
+  bool success = 1;   // Индикатор успешного сохранения
+  string message = 2; // Сообщение об ошибке, если есть //TODO сделать отдельный тип для ошибок
 }
 
-message UploadStatus {
-  bool success = 1;
-  string message = 2;
-}
-
-message DownloadRequest {
-  string id = 1;
+message FileRequest {
+  string fileID = 1; // Идентификатор файла, который нужно извлечь
 }
