@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -75,4 +76,51 @@ func (s *BadgerStorageService) GetChunkNumbers(id string) ([]int, error) {
 	}
 
 	return chunkNumbers, nil
+}
+
+// DeleteChunks удаляет все чанки для данного id файла
+func (s *BadgerStorageService) DeleteChunks(id string) error {
+	prefix := []byte(id + "_")
+	return s.db.Update(func(txn *badger.Txn) error {
+		it := txn.NewIterator(badger.DefaultIteratorOptions)
+		defer it.Close()
+
+		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
+			item := it.Item()
+			key := item.Key()
+			err := txn.Delete(key)
+			if err != nil {
+				log.Printf("BadgerDB Delete error: %v", err)
+				return err
+			}
+		}
+
+		return nil
+	})
+}
+
+// GetChunk возвращает содержимое конкретного чанка файла.
+func (s *BadgerStorageService) GetChunk(id string, chunkNumber int) (io.Reader, error) {
+	key := []byte(fmt.Sprintf("%s_%d", id, chunkNumber))
+	var valCopy []byte
+
+	err := s.db.View(func(txn *badger.Txn) error {
+		item, err := txn.Get(key)
+		if err != nil {
+			return err
+		}
+
+		valCopy, err = item.ValueCopy(nil)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return bytes.NewReader(valCopy), nil
 }
