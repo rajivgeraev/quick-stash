@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+option go_package = "github.com/rajivgeraev/quick-stash/StorageServer/grpc/proto";
+
+package storage;
+
+service StorageService {
+  rpc StoreFile(FileChunk) returns (StoreReply) {};
+  rpc RetrieveFile(FileRequest) returns (stream FileChunk) {};
+}
+
+message FileChunk {
+  string id = 1;
+  bytes chuck = 2;
+  int32 part = 3;
+}
+
+message FileRequest {
+  string id = 1;
+}
+
+message StoreReply {
+  bool success = 1;
+}
