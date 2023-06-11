@@ -4,21 +4,38 @@ option go_package = "github.com/rajivgeraev/quick-stash/StorageServer/grpc/proto
 
 package storage;
 
+// The storage service definition.
 service StorageService {
-  rpc StoreFile(FileChunk) returns (StoreReply) {};
-  rpc RetrieveFile(FileRequest) returns (stream FileChunk) {};
+  // Stores a file chunk.
+  rpc Store(stream FileChunk) returns (StoreReply) {}
+
+  // Retrieves a file by its id.
+  rpc Retrieve(FileRequest) returns (stream FileChunk) {}
+
+  // Deletes all chunks of a file by its id.
+  rpc Delete(FileRequest) returns (DeleteReply) {}
 }
 
-message FileChunk {
-  string id = 1;
-  bytes chuck = 2;
-  int32 part = 3;
-}
-
+// The request message containing the file's id.
 message FileRequest {
   string id = 1;
 }
 
+// The file chunk message containing the file's id, chunk number, and content.
+message FileChunk {
+  string id = 1;
+  int32 chunk_number = 2;
+  bytes content = 3;
+}
+
+// The reply message for the Store RPC.
 message StoreReply {
   bool success = 1;
+  string message = 2;
+}
+
+// The reply message for the Delete RPC.
+message DeleteReply {
+  bool success = 1;
+  string message = 2;
 }

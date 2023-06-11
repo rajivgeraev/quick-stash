@@ -19,16 +19,21 @@ import (
 const _ = grpc.SupportPackageIsVersion7
 
 const (
-	StorageService_StoreFile_FullMethodName    = "/storage.StorageService/StoreFile"
-	StorageService_RetrieveFile_FullMethodName = "/storage.StorageService/RetrieveFile"
+	StorageService_Store_FullMethodName    = "/storage.StorageService/Store"
+	StorageService_Retrieve_FullMethodName = "/storage.StorageService/Retrieve"
+	StorageService_Delete_FullMethodName   = "/storage.StorageService/Delete"
 )
 
 // StorageServiceClient is the client API for StorageService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type StorageServiceClient interface {
-	StoreFile(ctx context.Context, in *FileChunk, opts ...grpc.CallOption) (*StoreReply, error)
-	RetrieveFile(ctx context.Context, in *FileRequest, opts ...grpc.CallOption) (StorageService_RetrieveFileClient, error)
+	// Stores a file chunk.
+	Store(ctx context.Context, opts ...grpc.CallOption) (StorageService_StoreClient, error)
+	// Retrieves a file by its id.
+	Retrieve(ctx context.Context, in *FileRequest, opts ...grpc.CallOption) (StorageService_RetrieveClient, error)
+	// Deletes all chunks of a file by its id.
+	Delete(ctx context.Context, in *FileRequest, opts ...grpc.CallOption) (*DeleteReply, error)
 }
 
 type storageServiceClient struct {
@@ -39,21 +44,46 @@ func NewStorageServiceClient(cc grpc.ClientConnInterface) StorageServiceClient {
 	return &storageServiceClient{cc}
 }
 
-func (c *storageServiceClient) StoreFile(ctx context.Context, in *FileChunk, opts ...grpc.CallOption) (*StoreReply, error) {
-	out := new(StoreReply)
-	err := c.cc.Invoke(ctx, StorageService_StoreFile_FullMethodName, in, out, opts...)
+func (c *storageServiceClient) Store(ctx context.Context, opts ...grpc.CallOption) (StorageService_StoreClient, error) {
+	stream, err := c.cc.NewStream(ctx, &StorageService_ServiceDesc.Streams[0], StorageService_Store_FullMethodName, opts...)
 	if err != nil {
 		return nil, err
 	}
-	return out, nil
+	x := &storageServiceStoreClient{stream}
+	return x, nil
 }
 
-func (c *storageServiceClient) RetrieveFile(ctx context.Context, in *FileRequest, opts ...grpc.CallOption) (StorageService_RetrieveFileClient, error) {
-	stream, err := c.cc.NewStream(ctx, &StorageService_ServiceDesc.Streams[0], StorageService_RetrieveFile_FullMethodName, opts...)
+type StorageService_StoreClient interface {
+	Send(*FileChunk) error
+	CloseAndRecv() (*StoreReply, error)
+	grpc.ClientStream
+}
+
+type storageServiceStoreClient struct {
+	grpc.ClientStream
+}
+
+func (x *storageServiceStoreClient) Send(m *FileChunk) error {
+	return x.ClientStream.SendMsg(m)
+}
+
+func (x *storageServiceStoreClient) CloseAndRecv() (*StoreReply, error) {
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	m := new(StoreReply)
+	if err := x.ClientStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func (c *storageServiceClient) Retrieve(ctx context.Context, in *FileRequest, opts ...grpc.CallOption) (StorageService_RetrieveClient, error) {
+	stream, err := c.cc.NewStream(ctx, &StorageService_ServiceDesc.Streams[1], StorageService_Retrieve_FullMethodName, opts...)
 	if err != nil {
 		return nil, err
 	}
-	x := &storageServiceRetrieveFileClient{stream}
+	x := &storageServiceRetrieveClient{stream}
 	if err := x.ClientStream.SendMsg(in); err != nil {
 		return nil, err
 	}
@@ -63,16 +93,16 @@ func (c *storageServiceClient) RetrieveFile(ctx context.Context, in *FileRequest
 	return x, nil
 }
 
-type StorageService_RetrieveFileClient interface {
+type StorageService_RetrieveClient interface {
 	Recv() (*FileChunk, error)
 	grpc.ClientStream
 }
 
-type storageServiceRetrieveFileClient struct {
+type storageServiceRetrieveClient struct {
 	grpc.ClientStream
 }
 
-func (x *storageServiceRetrieveFileClient) Recv() (*FileChunk, error) {
+func (x *storageServiceRetrieveClient) Recv() (*FileChunk, error) {
 	m := new(FileChunk)
 	if err := x.ClientStream.RecvMsg(m); err != nil {
 		return nil, err
@@ -80,12 +110,25 @@ func (x *storageServiceRetrieveFileClient) Recv() (*FileChunk, error) {
 	return m, nil
 }
 
+func (c *storageServiceClient) Delete(ctx context.Context, in *FileRequest, opts ...grpc.CallOption) (*DeleteReply, error) {
+	out := new(DeleteReply)
+	err := c.cc.Invoke(ctx, StorageService_Delete_FullMethodName, in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // StorageServiceServer is the server API for StorageService service.
 // All implementations must embed UnimplementedStorageServiceServer
 // for forward compatibility
 type StorageServiceServer interface {
-	StoreFile(context.Context, *FileChunk) (*StoreReply, error)
-	RetrieveFile(*FileRequest, StorageService_RetrieveFileServer) error
+	// Stores a file chunk.
+	Store(StorageService_StoreServer) error
+	// Retrieves a file by its id.
+	Retrieve(*FileRequest, StorageService_RetrieveServer) error
+	// Deletes all chunks of a file by its id.
+	Delete(context.Context, *FileRequest) (*DeleteReply, error)
 	mustEmbedUnimplementedStorageServiceServer()
 }
 
@@ -93,11 +136,14 @@ type StorageServiceServer interface {
 type UnimplementedStorageServiceServer struct {
 }
 
-func (UnimplementedStorageServiceServer) StoreFile(context.Context, *FileChunk) (*StoreReply, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method StoreFile not implemented")
+func (UnimplementedStorageServiceServer) Store(StorageService_StoreServer) error {
+	return status.Errorf(codes.Unimplemented, "method Store not implemented")
 }
-func (UnimplementedStorageServiceServer) RetrieveFile(*FileRequest, StorageService_RetrieveFileServer) error {
-	return status.Errorf(codes.Unimplemented, "method RetrieveFile not implemented")
+func (UnimplementedStorageServiceServer) Retrieve(*FileRequest, StorageService_RetrieveServer) error {
+	return status.Errorf(codes.Unimplemented, "method Retrieve not implemented")
+}
+func (UnimplementedStorageServiceServer) Delete(context.Context, *FileRequest) (*DeleteReply, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method Delete not implemented")
 }
 func (UnimplementedStorageServiceServer) mustEmbedUnimplementedStorageServiceServer() {}
 
@@ -112,43 +158,69 @@ func RegisterStorageServiceServer(s grpc.ServiceRegistrar, srv StorageServiceSer
 	s.RegisterService(&StorageService_ServiceDesc, srv)
 }
 
-func _StorageService_StoreFile_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(FileChunk)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(StorageServiceServer).StoreFile(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: StorageService_StoreFile_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(StorageServiceServer).StoreFile(ctx, req.(*FileChunk))
-	}
-	return interceptor(ctx, in, info, handler)
+func _StorageService_Store_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(StorageServiceServer).Store(&storageServiceStoreServer{stream})
 }
 
-func _StorageService_RetrieveFile_Handler(srv interface{}, stream grpc.ServerStream) error {
+type StorageService_StoreServer interface {
+	SendAndClose(*StoreReply) error
+	Recv() (*FileChunk, error)
+	grpc.ServerStream
+}
+
+type storageServiceStoreServer struct {
+	grpc.ServerStream
+}
+
+func (x *storageServiceStoreServer) SendAndClose(m *StoreReply) error {
+	return x.ServerStream.SendMsg(m)
+}
+
+func (x *storageServiceStoreServer) Recv() (*FileChunk, error) {
+	m := new(FileChunk)
+	if err := x.ServerStream.RecvMsg(m); err != nil {
+		return nil, err
+	}
+	return m, nil
+}
+
+func _StorageService_Retrieve_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(FileRequest)
 	if err := stream.RecvMsg(m); err != nil {
 		return err
 	}
-	return srv.(StorageServiceServer).RetrieveFile(m, &storageServiceRetrieveFileServer{stream})
+	return srv.(StorageServiceServer).Retrieve(m, &storageServiceRetrieveServer{stream})
 }
 
-type StorageService_RetrieveFileServer interface {
+type StorageService_RetrieveServer interface {
 	Send(*FileChunk) error
 	grpc.ServerStream
 }
 
-type storageServiceRetrieveFileServer struct {
+type storageServiceRetrieveServer struct {
 	grpc.ServerStream
 }
 
-func (x *storageServiceRetrieveFileServer) Send(m *FileChunk) error {
+func (x *storageServiceRetrieveServer) Send(m *FileChunk) error {
 	return x.ServerStream.SendMsg(m)
+}
+
+func _StorageService_Delete_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(FileRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StorageServiceServer).Delete(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: StorageService_Delete_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StorageServiceServer).Delete(ctx, req.(*FileRequest))
+	}
+	return interceptor(ctx, in, info, handler)
 }
 
 // StorageService_ServiceDesc is the grpc.ServiceDesc for StorageService service.
@@ -159,14 +231,19 @@ var StorageService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*StorageServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "StoreFile",
-			Handler:    _StorageService_StoreFile_Handler,
+			MethodName: "Delete",
+			Handler:    _StorageService_Delete_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
 		{
-			StreamName:    "RetrieveFile",
-			Handler:       _StorageService_RetrieveFile_Handler,
+			StreamName:    "Store",
+			Handler:       _StorageService_Store_Handler,
+			ClientStreams: true,
+		},
+		{
+			StreamName:    "Retrieve",
+			Handler:       _StorageService_Retrieve_Handler,
 			ServerStreams: true,
 		},
 	},
